@@ -77,10 +77,35 @@ def push(data):
     return bytes([len(data)]) + data
 
 
-def parent_coinbase(aux_hash_hex, extra=b""):
+def expected_index(nonce, chain_id, height):
+    """FlapX's slot in the merged mining tree (same formula as the node)"""
+    r = nonce & 0xffffffff
+    r = (r * 1103515245 + 12345) & 0xffffffff
+    r = (r + chain_id) & 0xffffffff
+    r = (r * 1103515245 + 12345) & 0xffffffff
+    return r % (1 << height)
+
+
+def mm_tree(aux_hash_hex, two_chains, wrong_slot=False):
+    """Merged mining tree: FlapX alone (size 1), or FlapX plus another chain
+    (size 2, like a pool merge-mining DOGE and FLAPX). Returns the root as
+    written in the coinbase, size, nonce, FlapX's slot and its branch."""
+    ours = bytes.fromhex(aux_hash_hex)[::-1]          # internal byte order
+    if not two_chains:
+        return ours[::-1], 1, 0, 0, []
+    nonce = struct.unpack("<I", os.urandom(4))[0]
+    slot = expected_index(nonce, 0x0F1A, 1)
+    if wrong_slot:
+        slot = 1 - slot                                 # consistent tree, but not FlapX's slot
+    other = os.urandom(32)                              # the other chain's block
+    root = dsha(ours + other) if slot == 0 else dsha(other + ours)
+    return root[::-1], 2, nonce, slot, [other]
+
+
+def parent_coinbase(root_display, size=1, nonce=0, extra=b""):
     """Litecoin-format coinbase whose scriptSig carries the merged mining data:
-    marker, root (the FlapX block hash, as displayed), tree size 1, nonce 0."""
-    mm = b"\xfa\xbemm" + bytes.fromhex(aux_hash_hex) + struct.pack("<I", 1) + struct.pack("<I", 0)
+    marker, root (as displayed), tree size, nonce."""
+    mm = b"\xfa\xbemm" + root_display + struct.pack("<I", size) + struct.pack("<I", nonce)
     script_sig = push(os.urandom(4)) + push(mm) + extra
     tx = struct.pack("<i", 1)                                   # version
     tx += varint(1) + b"\x00" * 32 + struct.pack("<I", 0xffffffff)  # null prevout
@@ -114,18 +139,20 @@ def grind(header, target):
             return found
 
 
-def auxpow_hex(coinbase, header):
+def auxpow_hex(coinbase, header, slot=0, branch=()):
     return (coinbase + b"\x00" * 32        # coinbase tx, (unused) block hash
             + varint(0) + struct.pack("<i", 0)   # coinbase merkle branch (single tx), index 0
-            + varint(0) + struct.pack("<i", 0)   # chain merkle branch (FlapX only), slot 0
+            + varint(len(branch)) + b"".join(branch) + struct.pack("<i", slot)  # chain branch, slot
             + header).hex()
 
 
-def solve(block, version=1, extra=b""):
+def solve(block, version=1, two_chains=False, merkle_root=None, wrong_slot=False):
+    """Returns the AuxPoW (hex) for a parent block that meets the target"""
     target = int.from_bytes(bytes.fromhex(block["_target"]), "little")
-    coinbase = parent_coinbase(block["hash"], extra)
-    header = grind(parent_header(dsha(coinbase), version), target)
-    return coinbase, header
+    root, size, nonce, slot, branch = mm_tree(block["hash"], two_chains, wrong_slot)
+    coinbase = parent_coinbase(root, size, nonce)
+    header = grind(parent_header(merkle_root or dsha(coinbase), version), target)
+    return coinbase, header, slot, branch
 
 
 def expect_rejected(name, block, aux_hex):
@@ -150,25 +177,34 @@ def mine():
         height_before = rpc("getblockcount")
 
         if i == 0:
-            # Negative tests on the first block, before solving it properly
-            coinbase, header = solve(block)
-            bad_root = header[:36] + bytes(32) + header[68:]                      # parent merkle root wrong
-            expect_rejected("AuxPoW with a wrong parent merkle root", block, auxpow_hex(coinbase, bad_root))
-            other_cb, other_hdr = solve({"hash": "00" * 32, "_target": block["_target"]})  # valid work, other block
-            expect_rejected("AuxPoW committing to another block", block, auxpow_hex(other_cb, other_hdr))
-            coinbase2, header2 = solve(block, version=(0x0F1A << 16) | 1)          # parent with our chain ID
-            expect_rejected("AuxPoW whose parent has FlapX's chain ID", block, auxpow_hex(coinbase2, header2))
-            weak = header[:76] + struct.pack("<I", (struct.unpack("<I", header[76:])[0] + 1))
+            # Negative tests on the first block, before solving it properly.
+            # Each bad parent still meets the target, so the AuxPoW check
+            # itself has to catch it.
+            cb, hdr, _, _ = solve(block, merkle_root=bytes(32))                     # coinbase not in parent
+            expect_rejected("AuxPoW whose coinbase isn't in the parent block", block, auxpow_hex(cb, hdr))
+            cb, hdr, _, _ = solve({"hash": "00" * 32, "_target": block["_target"]})  # commits to another block
+            expect_rejected("AuxPoW committing to another block", block, auxpow_hex(cb, hdr))
+            cb, hdr, _, _ = solve(block, version=(0x0F1A << 16) | 1)                # parent has our chain ID
+            expect_rejected("AuxPoW whose parent has FlapX's chain ID", block, auxpow_hex(cb, hdr))
+            cb, hdr, slot, branch = solve(block, two_chains=True, wrong_slot=True)  # FlapX in the other slot
+            expect_rejected("AuxPoW with FlapX in the wrong tree slot", block, auxpow_hex(cb, hdr, slot, branch))
+            # Parent that misses the target (otherwise valid)
             target = int.from_bytes(bytes.fromhex(block["_target"]), "little")
-            if int.from_bytes(scrypt(weak), "little") > target:
-                expect_rejected("AuxPoW whose parent misses the target", block, auxpow_hex(coinbase, weak))
+            cb, hdr, _, _ = solve(block)
+            for n in range(1, 1000):
+                weak = hdr[:76] + struct.pack("<I", (struct.unpack("<I", hdr[76:])[0] + n) & 0xffffffff)
+                if int.from_bytes(scrypt(weak), "little") > target:
+                    break
+            expect_rejected("AuxPoW whose parent misses the target", block, auxpow_hex(cb, weak))
             assert rpc("getblockcount") == height_before, "a bad AuxPoW changed the chain"
 
-        coinbase, header = solve(block)
-        if not rpc("submitauxblock", block["hash"], auxpow_hex(coinbase, header)):
+        # Block 2 uses a two-chain tree (FlapX plus another chain), as a pool
+        # merge-mining DOGE and FLAPX would
+        coinbase, header, slot, branch = solve(block, two_chains=(i == 1))
+        if not rpc("submitauxblock", block["hash"], auxpow_hex(coinbase, header, slot, branch)):
             raise SystemExit("FAIL: valid AuxPoW rejected (see debug.log)")
         assert rpc("getblockcount") == height_before + 1
-        print("ok: merge-mined block %d accepted: %s" % (height_before + 1, block["hash"]))
+        print("ok: merge-mined block %d accepted%s: %s" % (height_before + 1, " (two-chain tree)" if i == 1 else "", block["hash"]))
         mined.append(block["hash"])
         time.sleep(11)   # past the node's 10 s 'downloading blocks' window
 
