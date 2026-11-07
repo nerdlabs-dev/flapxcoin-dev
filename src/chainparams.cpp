@@ -10,6 +10,7 @@
 #include "util.h"
 
 #include <boost/assign/list_of.hpp>
+#include <limits>
 
 using namespace boost::assign;
 using namespace std;
@@ -56,6 +57,12 @@ public:
         vAlertPubKey = ParseHex("04ef014b36647e8433a2cedf76f1d6ea0bc5914ba936fadceda90d7472da3cf442469d3a1ab5ee416e7428726761dd3188bda3d0ae163db491f8ca0bdad92a0506");
         nDefaultPort = 60042;
         nAltPort = 60242;
+        // Merged mining (merge-mined-development branch): chain ID 0x0F1A
+        // ("FlAp"); must differ from every other chain merge-mined under the
+        // same parent (Dogecoin uses 0x0062). Not active on mainnet yet: the
+        // activation height is set once the design and testnet results are done.
+        nAuxpowChainId = 0x0F1A;
+        nAuxpowStartHeight = std::numeric_limits<int>::max();
         nRPCPort = 60142;
         bnProofOfWorkLimit = CBigNum(~uint256(0) >> 20);
 
@@ -154,6 +161,8 @@ public:
         vAlertPubKey = ParseHex("0471dc165db490094d35cde15b1f5d755fa6ad6f2b5ed0f340e3f17f57389c3c2af113a8cbcc885bde73305a553b5640c83021128008ddf882e856336269080496");
         nDefaultPort = 60043;
         nAltPort = 60243;
+        // Merged mining is active on testnet from block 1
+        nAuxpowStartHeight = 1;
         nRPCPort = 60143;
         strDataDir = "testnet";
 

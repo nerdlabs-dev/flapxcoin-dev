@@ -59,6 +59,10 @@ public:
     /** Second peer port, for a second wallet behind the same internet connection.
      *  Treated like the default port when choosing peers. */
     int GetAltPort() const { return nAltPort; }
+    /** Merged mining: FlapX's chain ID (in merge-mined block versions) and the
+     *  first height where merge-mined blocks are valid */
+    int AuxpowChainId() const { return nAuxpowChainId; }
+    int AuxpowStartHeight() const { return nAuxpowStartHeight; }
     const CBigNum& ProofOfWorkLimit() const { return bnProofOfWorkLimit; }
     int SubsidyHalvingInterval() const { return nSubsidyHalvingInterval; }
     virtual const CBlock& GenesisBlock() const = 0;
@@ -79,6 +83,8 @@ protected:
     std::vector<unsigned char> vAlertPubKey;
     int nDefaultPort;
     int nAltPort;
+    int nAuxpowChainId;
+    int nAuxpowStartHeight;
     int nRPCPort;
     CBigNum bnProofOfWorkLimit;
     int nSubsidyHalvingInterval;

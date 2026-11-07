@@ -10,6 +10,7 @@
 #include "init.h"
 #include "miner.h"
 #include "bitcoinrpc.h"
+#include "base58.h"
 
 using namespace json_spirit;
 using namespace std;
@@ -580,4 +581,163 @@ Value submitblock(const Array& params, bool fHelp)
 }
 
 
+// ---------------------------------------------------------------------------
+// Merged mining (AuxPoW) for pools: createauxblock / submitauxblock and the
+// older getauxblock. A pool asks for a FlapX block, puts its hash in the
+// coinbase of the parent (Litecoin) block it is mining, and when a parent
+// block hash meets FlapX's target, submits the AuxPoW proof here.
+// ---------------------------------------------------------------------------
 
+// Blocks handed out to pools, by block hash (cleared when the tip changes)
+static map<uint256, CBlock*> mapAuxBlocks;
+static vector<CBlock*> vAuxBlocks;
+
+static void CheckAuxMiningAllowed()
+{
+    if (!TestNet() && vNodes.empty())
+        throw JSONRPCError(RPC_CLIENT_NOT_CONNECTED, "FlapX is not connected!");
+    if (IsInitialBlockDownload())
+        throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD, "FlapX is downloading blocks...");
+    if (pindexBest->nHeight + 1 < Params().AuxpowStartHeight())
+        throw JSONRPCError(RPC_MISC_ERROR, strprintf("Merged mining starts at block %d", Params().AuxpowStartHeight()));
+    if (pindexBest->nHeight >= (!TestNet() ? BLOCK_HEIGHT_FINALPOW : BLOCK_HEIGHT_FINALPOW_TESTNET))
+        throw JSONRPCError(RPC_MISC_ERROR, "No more PoW blocks");
+}
+
+// A new block to merge-mine, paying to scriptPayout (or the wallet's mining
+// key if it's empty). Reused until the tip changes, or for up to a minute
+// while new transactions arrive.
+static CBlock* GetAuxBlock(const CScript& scriptPayout)
+{
+    static CBlockIndex* pindexPrev = NULL;
+    static unsigned int nTransactionsUpdatedLast = 0;
+    static int64_t nStart = 0;
+    static map<CScript, CBlock*> mapCurrent;   // newest block per payout script
+
+    if (pindexPrev != pindexBest)
+    {
+        mapAuxBlocks.clear();
+        mapCurrent.clear();
+        BOOST_FOREACH(CBlock* pblock, vAuxBlocks)
+            delete pblock;
+        vAuxBlocks.clear();
+    }
+    else if (nTransactionsUpdated != nTransactionsUpdatedLast && GetTime() - nStart > 60)
+        mapCurrent.clear();   // make a new block with the new transactions
+
+    if (mapCurrent.count(scriptPayout))
+        return mapCurrent[scriptPayout];
+
+    CBlockIndex* pindexPrevNew = pindexBest;
+    nTransactionsUpdatedLast = nTransactionsUpdated;
+    nStart = GetTime();
+
+    CBlock* pblock = CreateNewBlock(*pMiningKey);
+    if (!pblock)
+        throw JSONRPCError(RPC_OUT_OF_MEMORY, "Out of memory");
+    if (!scriptPayout.empty())
+        pblock->vtx[0].vout[0].scriptPubKey = scriptPayout;
+
+    // Merge-mined block: base version 2 (as all FlapX PoW blocks), FlapX's
+    // chain ID and the AuxPoW flag (the AuxPoW itself comes with the submit)
+    pblock->nVersion = 2 | (Params().AuxpowChainId() * BLOCK_VERSION_CHAIN_START);
+    pblock->UpdateTime(pindexPrevNew);
+    pblock->nNonce = 0;
+    static unsigned int nExtraNonce = 0;
+    IncrementExtraNonce(pblock, pindexPrevNew, nExtraNonce);
+    pblock->SetAuxPow(new CAuxPow());
+
+    pindexPrev = pindexPrevNew;
+    vAuxBlocks.push_back(pblock);
+    mapCurrent[scriptPayout] = pblock;
+    mapAuxBlocks[pblock->GetHash()] = pblock;
+    return pblock;
+}
+
+static Object AuxBlockToJSON(const CBlock* pblock)
+{
+    uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
+    Object result;
+    result.push_back(Pair("hash", pblock->GetHash().GetHex()));
+    result.push_back(Pair("chainid", pblock->GetChainID()));
+    result.push_back(Pair("previousblockhash", pblock->hashPrevBlock.GetHex()));
+    result.push_back(Pair("coinbasevalue", (boost::int64_t)pblock->vtx[0].vout[0].nValue));
+    result.push_back(Pair("bits", strprintf("%08x", pblock->nBits)));
+    result.push_back(Pair("height", pindexBest->nHeight + 1));
+    // target as little-endian hex (as getauxblock in Namecoin / Dogecoin)
+    result.push_back(Pair("target", HexStr(BEGIN(hashTarget), END(hashTarget))));
+    result.push_back(Pair("_target", HexStr(BEGIN(hashTarget), END(hashTarget))));
+    return result;
+}
+
+static bool SubmitAuxBlock(const string& strHash, const string& strAuxPow)
+{
+    uint256 hash;
+    hash.SetHex(strHash);
+    if (!mapAuxBlocks.count(hash))
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Block hash unknown (stale or never handed out)");
+
+    vector<unsigned char> vchAuxPow = ParseHex(strAuxPow);
+    CDataStream ss(vchAuxPow, SER_NETWORK, PROTOCOL_VERSION);
+    CAuxPow* pow = new CAuxPow();
+    try {
+        ss >> *pow;
+    } catch (std::exception& e) {
+        delete pow;
+        throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "AuxPoW decode failed");
+    }
+
+    CBlock* pblock = mapAuxBlocks[hash];
+    pblock->SetAuxPow(pow);
+    return CheckWork(pblock, *pwalletMain, *pMiningKey);
+}
+
+Value createauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1)
+        throw runtime_error(
+            "createauxblock <address>\n"
+            "Creates a block to merge-mine, paying to <address>. Returns:\n"
+            "  \"hash\" : the block hash to put in the parent block's coinbase\n"
+            "  \"chainid\" : FlapX's chain ID\n"
+            "  \"previousblockhash\", \"coinbasevalue\", \"bits\", \"height\"\n"
+            "  \"_target\" : the target the parent block hash must meet (little endian)\n"
+            "Submit the solution with submitauxblock.");
+
+    CBitcoinAddress address(params[0].get_str());
+    if (!address.IsValid())
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid FlapX address");
+    CScript scriptPayout;
+    scriptPayout.SetDestination(address.Get());
+
+    CheckAuxMiningAllowed();
+    return AuxBlockToJSON(GetAuxBlock(scriptPayout));
+}
+
+Value submitauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || params.size() != 2)
+        throw runtime_error(
+            "submitauxblock <hash> <auxpow>\n"
+            "Submits a solved merge-mined block: <hash> from createauxblock, <auxpow>\n"
+            "the serialised AuxPoW (hex). Returns true if the block was accepted.");
+
+    return SubmitAuxBlock(params[0].get_str(), params[1].get_str());
+}
+
+Value getauxblock(const Array& params, bool fHelp)
+{
+    if (fHelp || (params.size() != 0 && params.size() != 2))
+        throw runtime_error(
+            "getauxblock [<hash> <auxpow>]\n"
+            "Without arguments: creates a block to merge-mine, paying to this wallet\n"
+            "(same result as createauxblock). With <hash> and <auxpow>: submits the\n"
+            "solution and returns true if the block was accepted.");
+
+    if (params.size() == 0)
+    {
+        CheckAuxMiningAllowed();
+        return AuxBlockToJSON(GetAuxBlock(CScript()));
+    }
+    return SubmitAuxBlock(params[0].get_str(), params[1].get_str());
+}

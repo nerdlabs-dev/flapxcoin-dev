@@ -454,7 +454,8 @@ void FormatHashBuffers(CBlock* pblock, char* pmidstate, char* pdata, char* phash
 
 bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
 {
-    uint256 hashBlock = pblock->GetPoWHash();
+    // For a merge-mined block this is the parent block's hash
+    uint256 hashBlock = pblock->GetProofOfWorkHash();
     uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
 
     if(!pblock->IsProofOfWork())
@@ -462,6 +463,9 @@ bool CheckWork(CBlock* pblock, CWallet& wallet, CReserveKey& reservekey)
 
     if (hashBlock > hashTarget)
         return error("CheckWork() : proof-of-work not meeting target");
+
+    if (pblock->IsAuxpow() && !pblock->CheckBlockProofOfWork())
+        return error("CheckWork() : AuxPoW is not valid");
 
     //// debug print
     printf("CheckWork() : new proof-of-work block found  \n  hash: %s  \ntarget: %s\n", hashBlock.GetHex().c_str(), hashTarget.GetHex().c_str());

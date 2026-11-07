@@ -24,6 +24,7 @@
 #include <list>
 
 #include <boost/filesystem/path.hpp>
+#include <boost/shared_ptr.hpp>
 
 class CWallet;
 class CBlock;
@@ -714,6 +715,14 @@ public:
  * Blocks are appended to chain/blk0001.dat files on disk.  Their location on disk
  * is indexed by CBlockIndex objects in memory.
  */
+/** Block version layout with merged mining (same as Namecoin / Dogecoin):
+ *  bits 0-7 base version, bit 8 "has AuxPoW", bits 16-31 chain ID */
+static const int BLOCK_VERSION_BASE_MASK = 0xff;
+static const int BLOCK_VERSION_AUXPOW = (1 << 8);
+static const int BLOCK_VERSION_CHAIN_START = (1 << 16);
+
+#include "auxpow.h"
+
 class CBlock
 {
 public:
@@ -731,6 +740,10 @@ public:
 
     // ppcoin: block signature - signed by one of the coin base txout[N]'s owner
     std::vector<unsigned char> vchBlockSig;
+
+    // merged mining: proof of work from a parent chain block, present when
+    // nVersion has BLOCK_VERSION_AUXPOW (network and disk, right after the header)
+    boost::shared_ptr<CAuxPow> auxpow;
 
     // memory only
     mutable std::vector<uint256> vMerkleTree;
@@ -759,6 +772,22 @@ public:
         READWRITE(nBits);
         READWRITE(nNonce);
 
+        // merged mining: the AuxPoW follows the header (also in header-only
+        // reads, so ConnectBlock's CDiskTxPos offsets account for it)
+        if (!(nType & SER_GETHASH))
+        {
+            if (this->nVersion & BLOCK_VERSION_AUXPOW)
+            {
+                if (fRead)
+                    const_cast<CBlock*>(this)->auxpow.reset(new CAuxPow());
+                else if (!auxpow)
+                    const_cast<CBlock*>(this)->auxpow.reset(new CAuxPow()); // not yet solved
+                READWRITE(*auxpow);
+            }
+            else if (fRead)
+                const_cast<CBlock*>(this)->auxpow.reset();
+        }
+
         // ConnectBlock depends on vtx following header to generate CDiskTxPos
         if (!(nType & (SER_GETHASH|SER_BLOCKHEADERONLY)))
         {
@@ -766,13 +795,13 @@ public:
 
             // BlockSig only in block version 3
             // due to the transition from PoW to PoS
-            if(nVersion >= 3)
+            if((this->nVersion & BLOCK_VERSION_BASE_MASK) >= 3)
               READWRITE(vchBlockSig);
         }
         else if (fRead)
         {
             const_cast<CBlock*>(this)->vtx.clear();
-            if(nVersion >= 3)
+            if((this->nVersion & BLOCK_VERSION_BASE_MASK) >= 3)
                 const_cast<CBlock*>(this)->vchBlockSig.clear();
         }
     )
@@ -787,6 +816,7 @@ public:
         nNonce = 0;
         vtx.clear();
         vchBlockSig.clear();
+        auxpow.reset();
         vMerkleTree.clear();
         fPoWCached = false;
         nDoS = 0;
@@ -822,6 +852,34 @@ public:
         fPoWCached = true;
         return thash;
     }
+
+    // merged mining helpers
+    int GetBaseVersion() const { return nVersion & BLOCK_VERSION_BASE_MASK; }
+    int GetChainID() const { return nVersion / BLOCK_VERSION_CHAIN_START; }
+    bool IsAuxpow() const { return (nVersion & BLOCK_VERSION_AUXPOW) != 0; }
+
+    /** Attach (or with NULL, remove) an AuxPoW; sets the version flag */
+    void SetAuxPow(CAuxPow* pow)
+    {
+        if (pow != NULL)
+            nVersion |= BLOCK_VERSION_AUXPOW;
+        else
+            nVersion &= ~BLOCK_VERSION_AUXPOW;
+        auxpow.reset(pow);
+    }
+
+    /** The hash that proves this PoW block's work: the parent block's scrypt
+     *  hash for a merged-mined block, else this block's own scrypt hash */
+    uint256 GetProofOfWorkHash() const
+    {
+        if (IsAuxpow() && auxpow)
+            return auxpow->GetParentBlockPoWHash();
+        return GetPoWHash();
+    }
+
+    /** Context-free proof-of-work check, including the AuxPoW (activation
+     *  height and chain ID are checked in AcceptBlock) */
+    bool CheckBlockProofOfWork() const;
 
     int64_t GetBlockTime() const
     {
@@ -960,7 +1018,7 @@ public:
         }
 
         // Check the header
-        if (fReadTransactions && IsProofOfWork() && !CheckProofOfWork(GetPoWHash(), nBits))
+        if (fReadTransactions && IsProofOfWork() && !CheckBlockProofOfWork())
             return error("CBlock::ReadFromDisk() : errors in block header");
 
         return true;
@@ -972,7 +1030,7 @@ public:
     {
         printf("CBlock(hash=%s, PoW=%s, ver=%d, hashPrevBlock=%s, hashMerkleRoot=%s, nTime=%u, nBits=%08x, nNonce=%u, vtx=%" PRIu64 ", vchBlockSig=%s)\n",
             GetHash().ToString().c_str(),
-            GetPoWHash().ToString().c_str(),
+            GetProofOfWorkHash().ToString().c_str(),
             nVersion,
             hashPrevBlock.ToString().c_str(),
             hashMerkleRoot.ToString().c_str(),

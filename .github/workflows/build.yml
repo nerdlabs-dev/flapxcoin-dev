@@ -73,6 +73,26 @@ jobs:
           ldd src/flapxd || true
           ./src/flapxd -? | head -n 3 || true
 
+      # Merged mining: mine merge-mined blocks on a private testnet node the
+      # way a pool would, check bad proofs are rejected, restart, re-check
+      - name: Merged mining test (testnet)
+        run: |
+          D="$(mktemp -d)"
+          printf 'rpcuser=ci\nrpcpassword=ci-test-only\nlisten=0\ndnsseed=0\nupnp=0\nstaking=0\ndiscover=0\n' > "$D/flapx.conf"
+          start() {
+            ./src/flapxd -testnet -datadir="$D" -daemon
+            for i in $(seq 1 60); do ./src/flapxd -testnet -datadir="$D" getinfo >/dev/null 2>&1 && return 0; sleep 1; done
+            echo "node did not start"; return 1
+          }
+          showlog() { echo "--- debug.log (AuxPoW lines) ---"; grep -i -E 'auxpow|CheckWork|ERROR' "$D/testnet/debug.log" | tail -40; }
+          start
+          python3 contrib/ci/auxpow-test.py 60143 ci ci-test-only mine || { showlog; tail -60 "$D/testnet/debug.log"; exit 1; }
+          showlog
+          ./src/flapxd -testnet -datadir="$D" stop; sleep 8
+          start
+          python3 contrib/ci/auxpow-test.py 60143 ci ci-test-only verify || { tail -60 "$D/testnet/debug.log"; exit 1; }
+          ./src/flapxd -testnet -datadir="$D" stop
+
       - uses: actions/upload-artifact@v4
         with:
           name: flapxd-linux-x86_64

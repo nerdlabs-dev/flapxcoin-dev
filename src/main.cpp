@@ -1914,7 +1914,10 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex, bool fJustCheck)
         // Since we're just checking the block and not actually connecting it, it might not (and probably shouldn't) be on the disk to get the transaction from
         nTxPos = 1;
     else
-        nTxPos = pindex->nBlockPos + ::GetSerializeSize(CBlock(), SER_DISK, CLIENT_VERSION) - (2 * GetSizeOfCompactSize(0)) + GetSizeOfCompactSize(vtx.size());
+        // The transactions start after the header (and the AuxPoW of a
+        // merge-mined block) and the transaction count. For a block without
+        // AuxPoW this is the 80-byte header, as before.
+        nTxPos = pindex->nBlockPos + ::GetSerializeSize(*this, SER_DISK | SER_BLOCKHEADERONLY, CLIENT_VERSION) + GetSizeOfCompactSize(vtx.size());
 
     map<uint256, CTxIndex> mapQueuedChanges;
     int64_t nFees = 0;
@@ -2270,7 +2273,7 @@ bool CBlock::SetBestChain(CTxDB& txdb, CBlockIndex* pindexNew)
         const CBlockIndex* pindex = pindexBest;
         for (int i = 0; i < 100 && pindex != NULL; i++)
         {
-            if (pindex->nVersion > CBlock::CURRENT_VERSION)
+            if ((pindex->nVersion & BLOCK_VERSION_BASE_MASK) > CBlock::CURRENT_VERSION)
                 ++nUpgraded;
             pindex = pindex->pprev;
         }
@@ -2495,8 +2498,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
     if (vtx.empty() || vtx.size() > MAX_BLOCK_SIZE || ::GetSerializeSize(*this, SER_NETWORK, PROTOCOL_VERSION) > MAX_BLOCK_SIZE)
         return DoS(100, error("CheckBlock() : size limits failed"));
 
-    // Check proof of work matches claimed amount
-    if (fCheckPOW && IsProofOfWork() && !CheckProofOfWork(GetPoWHash(), nBits))
+    // Check proof of work matches claimed amount (for a merge-mined block:
+    // the AuxPoW and the parent block's hash)
+    if (fCheckPOW && IsProofOfWork() && !CheckBlockProofOfWork())
         return DoS(50, error("CheckBlock() : proof of work failed"));
 
     // Check timestamp
@@ -2512,7 +2516,9 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
 
     if (IsProofOfStake())
     {
-        if(nVersion == 1) return DoS(50, error("CheckBlock() : PoS block version too low!"));
+        if(GetBaseVersion() == 1) return DoS(50, error("CheckBlock() : PoS block version too low!"));
+        if (IsAuxpow())
+            return DoS(100, error("CheckBlock() : proof-of-stake block with AuxPoW"));
 
         // Coinbase output should be empty if proof-of-stake block
         if (vtx[0].vout.size() != 1 || !vtx[0].vout[0].IsEmpty())
@@ -2563,12 +2569,24 @@ bool CBlock::CheckBlock(bool fCheckPOW, bool fCheckMerkleRoot, bool fCheckSig) c
     return true;
 }
 
+bool CBlock::CheckBlockProofOfWork() const
+{
+    if (IsAuxpow())
+    {
+        if (!auxpow)
+            return error("CheckBlockProofOfWork() : merge-mined block without AuxPoW");
+        if (!auxpow->Check(GetHash(), GetChainID()))
+            return error("CheckBlockProofOfWork() : AuxPoW is not valid");
+        if (!CheckProofOfWork(auxpow->GetParentBlockPoWHash(), nBits))
+            return error("CheckBlockProofOfWork() : AuxPoW parent block does not meet the target");
+        return true;
+    }
+    return CheckProofOfWork(GetPoWHash(), nBits);
+}
+
 bool CBlock::AcceptBlock()
 {
     AssertLockHeld(cs_main);
-
-    if (nVersion > CURRENT_VERSION)
-        return DoS(100, error("AcceptBlock() : reject unknown block version %d", nVersion));
 
     // Check for duplicate
     uint256 hash = GetHash();
@@ -2581,6 +2599,27 @@ bool CBlock::AcceptBlock()
         return DoS(10, error("AcceptBlock() : prev block not found"));
     CBlockIndex* pindexPrev = (*mi).second;
     int nHeight = pindexPrev->nHeight+1;
+
+    // Merged mining: before the activation height only plain versions are
+    // valid; from it on a block may carry an AuxPoW, which must use FlapX's
+    // chain ID. Version bits 9-15 are unused and must be 0.
+    if (nHeight < Params().AuxpowStartHeight())
+    {
+        // The rule before merged mining, unchanged
+        if (nVersion > CURRENT_VERSION)
+            return DoS(100, error("AcceptBlock() : reject unknown block version %d", nVersion));
+    }
+    else
+    {
+        if (GetBaseVersion() > CURRENT_VERSION)
+            return DoS(100, error("AcceptBlock() : reject unknown block version %08x", nVersion));
+        if (nVersion & 0xfe00)
+            return DoS(100, error("AcceptBlock() : unknown block version bits %08x", nVersion));
+        if (IsAuxpow() && GetChainID() != Params().AuxpowChainId())
+            return DoS(100, error("AcceptBlock() : merge-mined block with the wrong chain ID %d", GetChainID()));
+        if (!IsAuxpow() && GetChainID() != 0 && GetChainID() != Params().AuxpowChainId())
+            return DoS(100, error("AcceptBlock() : block with another chain's ID %d", GetChainID()));
+    }
 
     // Check proof of work
     if (nBits != GetNextWorkRequired(pindexPrev, this, IsProofOfStake()))
@@ -2615,7 +2654,7 @@ bool CBlock::AcceptBlock()
     // PoW is checked in CheckBlock()
     if (IsProofOfWork())
     {
-        hashProof = GetPoWHash();
+        hashProof = GetProofOfWorkHash();
     }
 
     bool cpSatisfies = Checkpoints::CheckSync(hash, pindexPrev);
