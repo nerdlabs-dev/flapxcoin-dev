@@ -161,10 +161,9 @@ public:
         // genesis.nBits  = bnProofOfWorkLimit.GetCompact();
         // Mined so the genesis block meets its own target (nNonce = 0 did not,
         // which made reading it back from disk fail the proof-of-work check).
-        // NOTE: this new testnet genesis block still needs verification on a
-        // live testnet. It was only checked locally on a single node (blocks
-        // mined on top of it and re-verified at startup); the matching testnet
-        // stake modifier checkpoint is in kernel.cpp.
+        // Verified independently: the header hashes to the value below and its
+        // scrypt proof of work meets nBits 0x1e0ffff0 (inherited from mainnet).
+        // The matching testnet stake modifier checkpoint is in kernel.cpp.
         genesis.nNonce = 522177;
         hashGenesisBlock = genesis.GetHash();
 	// genesis.print();
