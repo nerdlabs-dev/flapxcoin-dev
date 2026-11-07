@@ -13,7 +13,7 @@ name: Build
 # Documentation-only changes don't need new binaries (tag pushes always build)
 on:
   push:
-    branches: [ master, modern-linux-build ]
+    branches: [ master, modern-linux-build, snapshot-installer ]
     tags: [ 'v*' ]
     paths-ignore: [ '**.md', 'doc/**', 'README', 'COPYING', 'INSTALL' ]
   pull_request:
@@ -129,6 +129,12 @@ jobs:
           strip flapx-qt
           ccache -s
 
+      - name: Check Qt network / SSL support
+        run: |
+          grep -h -E 'QT_FEATURE_(ssl|openssl|openssl_linked) ' \
+            /usr/include/x86_64-linux-gnu/qt5/QtNetwork/qtnetwork-config.h \
+            /usr/include/x86_64-linux-gnu/qt5/QtNetwork/qtnetwork-config_p.h 2>/dev/null || true
+
       - name: Check the binary
         run: |
           file flapx-qt
@@ -237,6 +243,17 @@ jobs:
           export CCACHE_DIR="$(cygpath -m "$RUNNER_TEMP/ccache")"
           cd src/leveldb
           make TARGET_OS=NATIVE_WINDOWS -j"$(nproc)" CC="ccache gcc" CXX="ccache g++" libleveldb.a libmemenv.a
+
+      # Snapshot installer groundwork: can this Qt download over HTTPS on its
+      # own (OpenSSL linked in, not loaded from a DLL)?
+      - name: Check Qt network / SSL support
+        run: |
+          ls /mingw64/qt5-static/lib | grep -i -E 'Qt5Network|ssl|crypto' || true
+          grep -h -E 'QT_FEATURE_(ssl|openssl|openssl_linked|schannel|securetransport) ' \
+            /mingw64/qt5-static/include/QtNetwork/qtnetwork-config.h \
+            /mingw64/qt5-static/include/QtNetwork/qtnetwork-config_p.h 2>/dev/null || true
+          grep -h -i 'ssl' /mingw64/qt5-static/lib/pkgconfig/Qt5Network.pc 2>/dev/null || true
+          grep -h -i -E 'ssl|crypto' /mingw64/qt5-static/lib/Qt5Network.prl 2>/dev/null || true
 
       - name: Build flapx-qt.exe
         run: |
