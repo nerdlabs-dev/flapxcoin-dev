@@ -1,8 +1,35 @@
 # Merged mining FlapX with Litecoin: design notes
 
-Status: **exploration only**, on the `merge-mined-development` branch. Nothing
-here is active on mainnet. Merged mining is a hard fork: every node must
-upgrade before it activates.
+Status: **implemented and tested on testnet**, on the `merge-mined-development`
+branch. **Not active on mainnet** (no activation height set). Merged mining is
+a hard fork: every node must upgrade before it activates.
+
+## What's done (testnet)
+
+- AuxPoW support (`src/auxpow.h`, `src/auxpow.cpp`), adapted from Dogecoin
+  1.8. The parent coinbase and header use the parent chain's (Litecoin)
+  format, because FlapX transactions serialise differently.
+- Chain ID **0x0F1A**. Block version: base version in bits 0-7, bit 8 = has
+  AuxPoW, chain ID in bits 16-31 (same layout as Namecoin / Dogecoin).
+- Active on testnet from block 1. On mainnet the old version rule applies
+  unchanged until an activation height is set.
+- Pool RPC: `createauxblock <address>`, `submitauxblock <hash> <auxpow>`,
+  `getauxblock`. `getblock` shows the parent block of a merge-mined block.
+- CI test (`contrib/ci/auxpow-test.py`, run on every build of this branch):
+  mines merge-mined testnet blocks like a pool (one block with a two-chain
+  tree, as when merge-mining DOGE and FLAPX together), checks that five kinds
+  of bad proof are each rejected by the right check, reads a transaction
+  back from disk, restarts the node and checks again.
+
+## Still to do before mainnet
+
+1. Decide how PoW and PoS count toward chain weight (A / B / C below).
+2. Decide how to handle the difficulty jump at activation.
+3. Test with real pool software and a Litecoin testnet node as the parent.
+4. Check that no other coin merge-mined with Litecoin uses chain ID 0x0F1A.
+5. Run the branch on a copy of a synced mainnet node (it must load and
+   verify the existing chain exactly as before).
+6. Set the mainnet activation height and release.
 
 ## What merged mining is
 
