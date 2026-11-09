@@ -1,0 +1,78 @@
+# Builds flapxd (the Linux daemon) for Ubuntu 18.04, for older seed-node VMs.
+#
+# GitHub no longer has Ubuntu 18.04 build machines, so the build runs inside
+# an ubuntu:18.04 Docker container (contrib/build-ubuntu18.sh does the work).
+# The binary is kept as a downloadable artifact on the run's page
+# ("flapxd-ubuntu18.04-x86_64"). Pushing a tag like legacy-v2.9.0.4 also
+# publishes it as a GitHub release.
+
+name: Build (Ubuntu 18.04)
+
+on:
+  push:
+    branches: [ legacy ]
+    tags: [ 'legacy-v*' ]
+    paths-ignore: [ '**.md', 'doc/**', 'README', 'COPYING', 'INSTALL' ]
+  workflow_dispatch:
+
+concurrency:
+  group: build-ubuntu18-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions:
+  contents: read
+
+jobs:
+  linux-daemon-ubuntu18:
+    name: Linux daemon (Ubuntu 18.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Boost takes a while to build, so keep it between runs.
+      # Bump "-v1" after changing how Boost is built.
+      - uses: actions/cache@v4
+        with:
+          path: depends-ubuntu18
+          key: boost-1.74.0-ubuntu18.04-v1
+
+      - name: Build flapxd in an Ubuntu 18.04 container
+        run: |
+          docker run --rm -v "$PWD":/src -w /src ubuntu:18.04 \
+            bash contrib/build-ubuntu18.sh
+          # The container runs as root; hand the files back to the runner
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Check the binary runs on Ubuntu 18.04
+        run: |
+          docker run --rm -v "$PWD/src":/bin-flapx:ro ubuntu:18.04 bash -c '
+            ldd /bin-flapx/flapxd
+            if ldd /bin-flapx/flapxd | grep -Ei "boost|libdb|libssl|libcrypto|miniupnpc"; then
+              echo "flapxd should not need the shared libraries listed above"; exit 1
+            fi
+            /bin-flapx/flapxd -? | head -n 3'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flapxd-ubuntu18.04-x86_64
+          path: src/flapxd
+
+  release:
+    name: Publish release
+    if: startsWith(github.ref, 'refs/tags/legacy-v')
+    needs: linux-daemon-ubuntu18
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: flapxd-ubuntu18.04-x86_64
+          path: dist
+      - name: Package
+        run: |
+          chmod +x dist/flapxd
+          tar -czf flapxd-${GITHUB_REF_NAME}-ubuntu18.04-x86_64.tar.gz -C dist flapxd
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: flapxd-*-ubuntu18.04-x86_64.tar.gz
