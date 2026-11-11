@@ -97,8 +97,8 @@ jobs:
           EOF
 
           # OpenSSL
-          git clone -q --depth 1 --branch "$OPENSSL_TAG" https://github.com/openssl/openssl.git "$S/openssl"
-          (cd "$S/openssl" && ./Configure mingw --cross-compile-prefix=$HOST- no-shared no-tests no-docs \
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$OPENSSL_TAG" https://github.com/openssl/openssl.git "$S/openssl"
+          (cd "$S/openssl" && ./Configure mingw --cross-compile-prefix=$HOST- no-shared no-tests \
               --prefix="$P" --libdir=lib && make -j"$(nproc)" build_sw && make install_sw)
 
           # Boost (only the libraries FlapX uses), named with the -mt suffix the .pro expects
@@ -113,21 +113,21 @@ jobs:
           for f in "$P"/lib/libboost_*.a; do cp "$f" "${f%.a}-mt.a"; done
 
           # Berkeley DB 5.3 (as in the 64-bit Windows build)
-          git clone -q --depth 1 --branch "$BDB_TAG" https://github.com/berkeleydb/libdb.git "$S/bdb"
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$BDB_TAG" https://github.com/berkeleydb/libdb.git "$S/bdb"
           sed -i 's/__atomic_compare_exchange/__atomic_compare_exchange_db/g' "$S/bdb/src/dbinc/atomic.h"
           (cd "$S/bdb/build_unix" && CFLAGS="-O2 -std=gnu17 -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration" \
             ../dist/configure --host=$HOST --enable-mingw --enable-cxx --disable-shared --disable-replication --prefix="$P" \
             && make -j"$(nproc)" libdb.a libdb_cxx.a && make install_lib install_include)
 
           # miniupnpc
-          git clone -q --depth 1 --branch "$MINIUPNPC_TAG" https://github.com/miniupnp/miniupnp.git "$S/miniupnp"
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$MINIUPNPC_TAG" https://github.com/miniupnp/miniupnp.git "$S/miniupnp"
           cmake -S "$S/miniupnp/miniupnpc" -B "$S/upnpbuild" -DCMAKE_TOOLCHAIN_FILE="$S/toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$P" -DUPNPC_BUILD_STATIC=ON -DUPNPC_BUILD_SHARED=OFF \
             -DUPNPC_BUILD_TESTS=OFF -DUPNPC_BUILD_SAMPLE=OFF
           cmake --build "$S/upnpbuild" -j"$(nproc)" && cmake --install "$S/upnpbuild"
 
           # qrencode
-          git clone -q --depth 1 --branch "$QRENCODE_TAG" https://github.com/fukuchi/libqrencode.git "$S/qrencode"
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$QRENCODE_TAG" https://github.com/fukuchi/libqrencode.git "$S/qrencode"
           cmake -S "$S/qrencode" -B "$S/qrbuild" -DCMAKE_TOOLCHAIN_FILE="$S/toolchain.cmake" -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$P" -DBUILD_SHARED_LIBS=OFF -DWITH_TOOLS=NO -DWITH_TESTS=NO -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build "$S/qrbuild" -j"$(nproc)" && cmake --install "$S/qrbuild"
@@ -145,7 +145,7 @@ jobs:
         run: |
           set -e
           P="$RUNNER_TEMP/w32"; S="$RUNNER_TEMP/src"; mkdir -p "$S"
-          git clone -q --depth 1 --branch "$QT_TAG" https://github.com/qt/qtbase.git "$S/qtbase"
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$QT_TAG" https://github.com/qt/qtbase.git "$S/qtbase"
           cd "$S/qtbase"
           ./configure -xplatform win32-g++ -device-option CROSS_COMPILE=$HOST- \
             -prefix "$RUNNER_TEMP/w32-qt5" -static -release -opensource -confirm-license \
