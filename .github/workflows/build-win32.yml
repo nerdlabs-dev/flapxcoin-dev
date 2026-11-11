@@ -210,7 +210,7 @@ jobs:
           file release/flapx-qt-win32.exe | grep -q 'PE32 executable.*Intel 80386' || { echo "not a 32-bit Windows exe"; exit 1; }
           DLLS="$($HOST-objdump -p release/flapx-qt-win32.exe | awk '/DLL Name/ {print tolower($3)}' | sort -u)"
           echo "$DLLS"
-          BAD="$(echo "$DLLS" | grep -v -x -E 'kernel32.dll|user32.dll|gdi32.dll|advapi32.dll|shell32.dll|ole32.dll|oleaut32.dll|comdlg32.dll|ws2_32.dll|crypt32.dll|iphlpapi.dll|shlwapi.dll|winmm.dll|imm32.dll|uxtheme.dll|dwmapi.dll|version.dll|netapi32.dll|userenv.dll|winspool.drv|mpr.dll|msvcrt.dll|rpcrt4.dll|wtsapi32.dll|comctl32.dll|bcrypt.dll|secur32.dll|dnsapi.dll|api-ms-win-.*' || true)"
+          BAD="$(echo "$DLLS" | grep -v -x -E 'kernel32.dll|user32.dll|gdi32.dll|advapi32.dll|shell32.dll|ole32.dll|oleaut32.dll|comdlg32.dll|ws2_32.dll|mswsock.dll|crypt32.dll|iphlpapi.dll|shlwapi.dll|winmm.dll|imm32.dll|uxtheme.dll|dwmapi.dll|version.dll|netapi32.dll|userenv.dll|winspool.drv|mpr.dll|msvcrt.dll|rpcrt4.dll|wtsapi32.dll|comctl32.dll|bcrypt.dll|secur32.dll|dnsapi.dll|api-ms-win-.*' || true)"
           if [ -n "$BAD" ]; then echo "needs non-Windows DLLs: $BAD"; exit 1; fi
 
       - uses: actions/upload-artifact@v4
