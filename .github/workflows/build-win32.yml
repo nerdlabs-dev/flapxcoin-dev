@@ -43,11 +43,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Ubuntu's package servers sometimes stall: time out and retry
+      # rather than hang for the whole job
       - name: Install the cross compiler
+        timeout-minutes: 20
         run: |
-          sudo apt-get update
-          sudo apt-get install -y g++-mingw-w64-i686 mingw-w64-tools cmake ccache \
-            qttools5-dev-tools perl python3 pkg-config file
+          APT="sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30"
+          for i in 1 2 3; do
+            timeout 300 $APT update && timeout 600 $APT install -y g++-mingw-w64-i686 mingw-w64-tools cmake ccache \
+              qttools5-dev-tools perl python3 pkg-config file && break
+            echo "apt attempt $i failed, retrying"; sleep 20
+          done
           # The "posix" thread model (needed for C++11 threads in Qt and Boost)
           sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
           sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix
