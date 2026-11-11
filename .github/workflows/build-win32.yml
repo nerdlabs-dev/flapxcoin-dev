@@ -115,6 +115,9 @@ jobs:
           # Berkeley DB 5.3 (as in the 64-bit Windows build)
           git -c advice.detachedHead=false clone -q --depth 1 --branch "$BDB_TAG" https://github.com/berkeleydb/libdb.git "$S/bdb"
           sed -i 's/__atomic_compare_exchange/__atomic_compare_exchange_db/g' "$S/bdb/src/dbinc/atomic.h"
+          # Windows ignores letter case in header names; the Linux cross
+          # compiler's Windows headers are lower case
+          sed -i 's/<WinIoCtl.h>/<winioctl.h>/' "$S/bdb/src/dbinc/win_db.h"
           (cd "$S/bdb/build_unix" && CFLAGS="-O2 -std=gnu17 -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration" \
             ../dist/configure --host=$HOST --enable-mingw --enable-cxx --disable-shared --disable-replication --prefix="$P" \
             && make -j"$(nproc)" libdb.a libdb_cxx.a && make install_lib install_include)
