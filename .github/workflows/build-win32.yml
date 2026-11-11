@@ -33,6 +33,7 @@ env:
   BDB_TAG: v5.3.28
   MINIUPNPC_TAG: miniupnpc_2_2_8
   QRENCODE_TAG: v4.1.1
+  ZLIB_TAG: v1.3.1
   CCACHE_COMPILERCHECK: content
   CCACHE_MAXSIZE: 500M
 
@@ -71,7 +72,7 @@ jobs:
         id: libcache
         with:
           path: ${{ runner.temp }}/w32
-          key: win32-libs-${{ env.OPENSSL_TAG }}-boost${{ env.BOOST_VERSION }}-bdb${{ env.BDB_TAG }}-${{ env.MINIUPNPC_TAG }}-qr${{ env.QRENCODE_TAG }}-v1
+          key: win32-libs-${{ env.OPENSSL_TAG }}-boost${{ env.BOOST_VERSION }}-bdb${{ env.BDB_TAG }}-${{ env.MINIUPNPC_TAG }}-qr${{ env.QRENCODE_TAG }}-z${{ env.ZLIB_TAG }}-v2
 
       - uses: actions/cache/restore@v4
         id: qtcache
@@ -79,7 +80,7 @@ jobs:
           path: ${{ runner.temp }}/w32-qt5
           key: win32-qt-${{ env.QT_TAG }}-${{ env.OPENSSL_TAG }}-v1
 
-      - name: Build the libraries (OpenSSL, Boost, Berkeley DB, miniupnpc, qrencode)
+      - name: Build the libraries (OpenSSL, Boost, Berkeley DB, miniupnpc, qrencode, zlib)
         if: steps.libcache.outputs.cache-hit != 'true'
         run: |
           set -e
@@ -134,6 +135,11 @@ jobs:
           cmake -S "$S/qrencode" -B "$S/qrbuild" -DCMAKE_TOOLCHAIN_FILE="$S/toolchain.cmake" -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$P" -DBUILD_SHARED_LIBS=OFF -DWITH_TOOLS=NO -DWITH_TESTS=NO -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build "$S/qrbuild" -j"$(nproc)" && cmake --install "$S/qrbuild"
+
+          # zlib
+          git -c advice.detachedHead=false clone -q --depth 1 --branch "$ZLIB_TAG" https://github.com/madler/zlib.git "$S/zlib"
+          make -C "$S/zlib" -f win32/Makefile.gcc PREFIX=$HOST- libz.a
+          cp "$S/zlib/libz.a" "$P/lib/" && cp "$S/zlib/zlib.h" "$S/zlib/zconf.h" "$P/include/"
 
           ls "$P/lib"
 
