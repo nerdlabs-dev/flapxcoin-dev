@@ -50,10 +50,17 @@ jobs:
         run: |
           APT="sudo apt-get -o Acquire::Retries=5 -o Acquire::http::Timeout=30"
           for i in 1 2 3; do
-            timeout 300 $APT update && timeout 600 $APT install -y g++-mingw-w64-i686 mingw-w64-tools cmake ccache \
-              qttools5-dev-tools perl python3 pkg-config file && break
-            echo "apt attempt $i failed, retrying"; sleep 20
+            timeout 300 $APT update -o APT::Update::Error-Mode=any \
+              && timeout 600 $APT install -y g++-mingw-w64-i686 mingw-w64-tools cmake ccache \
+                   qttools5-dev-tools perl python3 pkg-config file \
+              && break
+            # GitHub's preset Azure mirror can be unreachable: use Ubuntu's own servers
+            echo "apt attempt $i failed; switching to archive.ubuntu.com"
+            echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt
+            sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' /etc/apt/sources.list
+            sleep 10
           done
+          command -v i686-w64-mingw32-g++-posix || { echo "cross compiler not installed"; exit 1; }
           # The "posix" thread model (needed for C++11 threads in Qt and Boost)
           sudo update-alternatives --set i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc-posix
           sudo update-alternatives --set i686-w64-mingw32-g++ /usr/bin/i686-w64-mingw32-g++-posix
