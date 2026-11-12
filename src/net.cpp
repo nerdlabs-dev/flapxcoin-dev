@@ -1018,6 +1018,8 @@ void ThreadSocketHandler()
                         {
                             if (!pnode->ReceiveMsgBytes(pchBuf, nBytes))
                                  pnode->CloseSocketDisconnect();
+                            else if (!pnode->vRecvMsg.empty() && pnode->vRecvMsg.back().complete())
+                                WakeMessageHandler();   // a whole message is waiting
                             pnode->nLastRecv = GetTime();
                             pnode->nRecvBytes += nBytes;
                             CNode::RecordBytesRecv(nBytes);
@@ -1544,6 +1546,22 @@ static int64_t NodeSyncScore(const CNode *pnode) {
 
 bool fCatchingUp = false;
 
+// Wakes the message handler as soon as new data arrives, instead of letting
+// it finish a 100 ms nap: during sync, blocks arrive one by one and each one
+// used to wait up to 100 ms before being processed.
+static boost::mutex mutexMsgProc;
+static boost::condition_variable condMsgProc;
+static bool fMsgProcWake = false;
+
+static void WakeMessageHandler()
+{
+    {
+        boost::lock_guard<boost::mutex> lock(mutexMsgProc);
+        fMsgProcWake = true;
+    }
+    condMsgProc.notify_one();
+}
+
 bool IsSyncNode(const CNode* pnode) {
     return pnode == pnodeSync;
 }
@@ -1774,11 +1792,16 @@ void ThreadMessageHandler()
                 pnode->Release();
         }
 
-        // Wait and allow messages to bunch up.
-        // Reduce vnThreadsRunning so StopNode has permission to exit while
-        // we're sleeping, but we must always check fShutdown after doing this.
+        // Nothing to do: wait up to 100 ms, but wake as soon as a complete
+        // message arrives (WakeMessageHandler). The wait is an interruption
+        // point, so shutdown still stops this thread promptly.
         if (fSleep)
-            MilliSleep(100);
+        {
+            boost::unique_lock<boost::mutex> lock(mutexMsgProc);
+            if (!fMsgProcWake)
+                condMsgProc.wait_for(lock, boost::chrono::milliseconds(100));
+            fMsgProcWake = false;
+        }
     }
 }
 
