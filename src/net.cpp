@@ -13,12 +13,16 @@
 #include "addrman.h"
 #include "ui_interface.h"
 
+// Defined further down, next to the message handler it wakes
+static void WakeMessageHandler();
+
 #ifdef WIN32
 #include <string.h>
+#endif
+
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/mutex.hpp>
 #include <boost/chrono/duration.hpp>
-#endif
 
 #ifdef USE_UPNP
 #include <miniupnpc/miniwget.h>
