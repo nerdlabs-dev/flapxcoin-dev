@@ -15,6 +15,9 @@
 
 #ifdef WIN32
 #include <string.h>
+#include <boost/thread/condition_variable.hpp>
+#include <boost/thread/mutex.hpp>
+#include <boost/chrono/duration.hpp>
 #endif
 
 #ifdef USE_UPNP
