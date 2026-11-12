@@ -46,6 +46,9 @@ bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOu
 void MapPort(bool fUseUPnP);
 /** Is this the peer we're downloading the chain from? */
 bool IsSyncNode(const CNode* pnode);
+/** True while we are well behind the height our peers agree on (set by the
+ *  message handler thread). We don't serve blocks then. */
+extern bool fCatchingUp;
 /** Stop downloading from this peer and pick another (it's skipped for nSeconds) */
 void ReleaseSyncNode(CNode* pnode, int64_t nSeconds);
 unsigned short GetListenPort();

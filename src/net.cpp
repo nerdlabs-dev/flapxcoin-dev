@@ -1511,27 +1511,38 @@ bool OpenNetworkConnection(const CAddress& addrConnect, CSemaphoreGrant *grantOu
     return true;
 }
 
-// Client version a peer announced in its sub-version, e.g. "/FlapX-Starhopper:2.9.0.3/"
-// gives 20900 (major*10000 + minor*100 + revision); 0 if it can't be read
+// Client version a peer announced in its sub-version, e.g.
+// "/FlapX-Starhopper:2.9.0.5/" gives 2090005 (major, minor, revision, build as
+// two digits each); 0 if it can't be read. It's only what the peer says: used
+// as a preference (a threshold), never trusted for anything else.
 static int PeerClientVersion(const CNode *pnode) {
     const std::string& s = pnode->strSubVer;
     size_t pos = s.rfind(':');
     if (pos == std::string::npos)
         return 0;
-    int nMajor = 0, nMinor = 0, nRevision = 0;
-    if (sscanf(s.c_str() + pos + 1, "%d.%d.%d", &nMajor, &nMinor, &nRevision) < 2)
+    int nMajor = 0, nMinor = 0, nRevision = 0, nBuild = 0;
+    if (sscanf(s.c_str() + pos + 1, "%d.%d.%d.%d", &nMajor, &nMinor, &nRevision, &nBuild) < 2)
         return 0;
-    return nMajor * 10000 + nMinor * 100 + nRevision;
+    return nMajor * 1000000 + nMinor * 10000 + nRevision * 100 + nBuild;
 }
 
-// Peers running 2.9 or newer send 500 blocks per request instead of 50 (2.3.x),
-// so prefer them; among equals, the one we heard from most recently
+// Is this peer new enough that we prefer to download from it? A threshold, not
+// "highest wins": every peer at or above MIN_SYNC_PEER_VERSION counts the same,
+// so claiming a made-up higher version gains nothing.
+static bool IsPreferredSyncVersion(const CNode *pnode) {
+    return PeerClientVersion(pnode) >= MIN_SYNC_PEER_VERSION;
+}
+
+// Preferred-version peers first (bigger batches); among equals, the one we
+// heard from most recently
 static int64_t NodeSyncScore(const CNode *pnode) {
     int64_t nScore = pnode->nLastRecv;
-    if (PeerClientVersion(pnode) >= 20900)
+    if (IsPreferredSyncVersion(pnode))
         nScore += (int64_t)1 << 40;   // outranks any difference in nLastRecv
     return nScore;
 }
+
+bool fCatchingUp = false;
 
 bool IsSyncNode(const CNode* pnode) {
     return pnode == pnodeSync;
@@ -1636,6 +1647,28 @@ void static StartSync(const vector<CNode*> &vNodes) {
 // The sync peer has sent every block it is known to have. If another usable
 // peer is clearly further ahead, move to it now rather than waiting for the
 // stall watchdog (which takes a couple of minutes to give up).
+// The sync peer is older than MIN_SYNC_PEER_VERSION (small batches) but a
+// preferred-version peer at the agreed height is available: switch to it.
+// Only ever from old to new, so it can't flip back and forth.
+void static UpgradeSyncNodeIfOld(const vector<CNode*> &vNodes) {
+    if (fReindex || pnodeSync == NULL || IsPreferredSyncVersion(pnodeSync))
+        return;
+    int64_t nNow = GetTime();
+    int nAgreed = AgreedPeerHeight(vNodes, false, nNow);
+    BOOST_FOREACH(CNode* pnode, vNodes) {
+        if (pnode == pnodeSync || !CanSyncFrom(pnode) || pnode->nSyncAvoidUntil > nNow ||
+            !IsPreferredSyncVersion(pnode) || !HeightAgreed(pnode, nAgreed) ||
+            pnode->nKnownHeight <= nBestHeight)
+            continue;
+        printf("sync: %s (%s) is older than the preferred version, switching to %s (%s)\n",
+               pnodeSync->addrName.c_str(), pnodeSync->strSubVer.c_str(),
+               pnode->addrName.c_str(), pnode->strSubVer.c_str());
+        ReleaseSyncNode(pnodeSync, 10 * 60);
+        StartSync(vNodes);
+        return;
+    }
+}
+
 void static SwitchIfSyncNodeExhausted(const vector<CNode*> &vNodes) {
     if (fReindex || pnodeSync == NULL || pnodeSync->nKnownHeight > nBestHeight)
         return;
@@ -1677,7 +1710,22 @@ void ThreadMessageHandler()
         if (!fHaveSyncNode)
             StartSync(vNodesCopy);
         else
+        {
             SwitchIfSyncNodeExhausted(vNodesCopy);
+            UpgradeSyncNodeIfOld(vNodesCopy);
+        }
+
+        // Catching up: well behind the height our peers agree on. If every
+        // peer is at about our height (or we have none), we're not.
+        {
+            int nAgreed = AgreedPeerHeight(vNodesCopy, false, GetTime());
+            bool fNow = nAgreed >= 0 && nBestHeight < nAgreed - CATCHING_UP_BLOCKS;
+            if (fNow != fCatchingUp)
+                printf(fNow ? "Catching up: not handing out blocks until we're synced (us %d, peers %d)\n"
+                            : "Caught up: handing out blocks again (us %d, peers %d)\n",
+                       nBestHeight, nAgreed);
+            fCatchingUp = fNow;
+        }
 
         // Poll the connected nodes for messages
         CNode* pnodeTrickle = NULL;

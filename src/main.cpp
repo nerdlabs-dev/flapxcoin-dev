@@ -3821,6 +3821,13 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         uint256 hashStop;
         vRecv >> locator >> hashStop;
 
+        // While we're still catching up ourselves, leave serving the chain to
+        // synced peers: answering means reading and sending up to a batch of
+        // blocks, which slows our own download. The peer stays connected and
+        // its stall watchdog moves it to another peer.
+        if (fCatchingUp)
+            return true;
+
         LOCK(cs_main);
 
         // Find the last block the caller has in the main chain
@@ -3876,6 +3883,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         CBlockLocator locator;
         uint256 hashStop;
         vRecv >> locator >> hashStop;
+
+        if (fCatchingUp)    // as getblocks
+            return true;
 
         LOCK(cs_main);
 
