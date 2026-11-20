@@ -342,8 +342,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macos-14 (Sonoma): the arm64 macos-15 pool kept running out of
+          # machines, and building on 14 lets the app run on macOS 14 too
           - arch: arm64
-            runner: macos-15
+            runner: macos-14
           - arch: x86_64
             runner: macos-15-intel
     runs-on: ${{ matrix.runner }}
