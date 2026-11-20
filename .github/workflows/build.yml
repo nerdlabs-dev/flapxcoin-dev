@@ -180,26 +180,28 @@ jobs:
 
       - uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          # MSYS2 dropped static Qt 5 for MINGW64 in Nov 2026; UCRT64 still has it.
+          # UCRT is built into Windows 10 and 11 (Windows 7/8.1 need update KB2999226).
+          msystem: UCRT64
           update: true
           install: >-
             make
             git
             diffutils
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-boost
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-miniupnpc
-            mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-qt5-static
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ccache
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-qt5-static
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ccache
 
       - uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: ccache-windows-qt-${{ github.sha }}
-          restore-keys: ccache-windows-qt-
+          key: ccache-windows-ucrt-${{ github.sha }}
+          restore-keys: ccache-windows-ucrt-
 
       - uses: actions/cache@v4
         id: depcache
@@ -207,7 +209,7 @@ jobs:
           path: |
             ${{ runner.temp }}/bdb-install
             ${{ runner.temp }}/qrencode
-          key: windows-deps-bdb5.3.28-qrencode4.1.1-v1
+          key: windows-deps-ucrt64-bdb5.3.28-qrencode4.1.1-v1
 
       # Berkeley DB 5.3 (Sleepycat license), the same version the Linux builds
       # use. MSYS2 only ships 6.x, which is AGPL-licensed and a DLL.
@@ -255,7 +257,7 @@ jobs:
           QR="$(cygpath -m "$RUNNER_TEMP/qrencode")"
           BDB="$(cygpath -m "$RUNNER_TEMP/bdb-install")"
           export CCACHE_DIR="$(cygpath -m "$RUNNER_TEMP/ccache")"
-          /mingw64/qt5-static/bin/qmake USE_SYSTEM_DEPS=1 USE_UPNP=1 USE_QRCODE=1 \
+          /ucrt64/qt5-static/bin/qmake USE_SYSTEM_DEPS=1 USE_UPNP=1 USE_QRCODE=1 \
             NO_BOOST_SYSTEM_LIB=1 "BOOST_LIB_SUFFIX=-mt" \
             "QMAKE_CC=ccache gcc" "QMAKE_CXX=ccache g++" "QMAKE_LINK=g++" \
             "BDB_INCLUDE_PATH=$BDB/include" "BDB_LIB_PATH=$BDB/lib" \
