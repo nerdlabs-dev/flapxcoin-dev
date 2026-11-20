@@ -82,7 +82,9 @@ bool CDBEnv::Open(boost::filesystem::path pathEnv_)
     if (GetBoolArg("-privdb", true))
         nEnvFlags |= DB_PRIVATE;
 
-    int nDbCache = GetArg("-dbcache", 25);
+    // The wallet database's own cache. It used to follow -dbcache, so raising
+    // -dbcache for a faster sync also grew this cache, to no benefit.
+    int nDbCache = std::max(1, (int)GetArg("-walletcache", 25));
     dbenv.set_lg_dir(pathLogDir.string().c_str());
     dbenv.set_cachesize(nDbCache / 1024, (nDbCache % 1024)*1048576, 1);
     dbenv.set_lg_bsize(1048576);

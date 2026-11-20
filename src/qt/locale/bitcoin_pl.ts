@@ -4673,6 +4673,11 @@ Jeżeli plik nie istnieje, utwórz go z uprawnieniami właściciela-tylko-do-odc
         <source>Insufficient funds</source>
         <translation>Niewystarczające środki</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Rozmiar pamięci podręcznej bazy danych portfela w megabajtach (domyślnie: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

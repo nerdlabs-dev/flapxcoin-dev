@@ -1297,12 +1297,17 @@ static void drawTerminalScene(QPainter &painter, const QRect &rect)
 
 bool drawDarkThemeScene(QPainter &painter, const QRect &rect)
 {
-    // The picture or the drawn scene, kept per theme and window size
+    // The picture or the drawn scene, kept per theme and window size. The
+    // full-size picture (8 MB or so once decoded) is only needed to make the
+    // window-sized copy, so it's let go once the window has kept its size for a
+    // few seconds; while the window is being resized it stays, so that's smooth.
     static QImage picture;
     static int pictureFor = -1;
+    static qint64 nPictureUsed = 0;
     static QPixmap scaled;
     static QSize scaledFor;
     static int scaledTheme = -1;
+    static const qint64 PICTURE_KEEP_MS = 5000;
 
     const DarkTheme &t = darkThemes[nDarkTheme];
     if (rect.isEmpty())
@@ -1314,11 +1319,23 @@ bool drawDarkThemeScene(QPainter &painter, const QRect &rect)
     }
     if (t.picture)
     {
+        const qint64 nNow = QDateTime::currentMSecsSinceEpoch();
+        if (scaledFor == rect.size() && !scaled.isNull())
+        {
+            if (!picture.isNull() && nNow - nPictureUsed > PICTURE_KEEP_MS)
+            {
+                picture = QImage();
+                pictureFor = -1;
+            }
+            painter.drawPixmap(rect.topLeft(), scaled);
+            return true;
+        }
         if (pictureFor != nDarkTheme)
         {
             picture = QImage(QString::fromUtf8(t.picture));
             pictureFor = nDarkTheme;
         }
+        nPictureUsed = nNow;
         if (drawBottomAnchored(painter, rect, picture, scaled, scaledFor))
             return true;
     }

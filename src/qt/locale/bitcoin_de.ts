@@ -4656,6 +4656,11 @@ Falls die Konfigurationsdatei nicht existiert, erzeugen Sie diese bitte mit Lese
         <source>Insufficient funds</source>
         <translation>Unzureichender Kontostand</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Größe des Wallet-Datenbank-Caches in Megabyte (Standard: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

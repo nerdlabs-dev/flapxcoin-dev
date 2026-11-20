@@ -4665,6 +4665,11 @@ Se il file non esiste, crealo assegnando i permessi di lettura solamente al prop
         <source>Insufficient funds</source>
         <translation>Fondi insufficienti</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Dimensione della cache del database del portafoglio in megabyte (predefinito: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

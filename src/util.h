@@ -569,6 +569,11 @@ inline void SetThreadPriority(int nPriority)
 
 void RenameThread(const char* name);
 
+/** Hand memory the program has freed back to the operating system. Memory a
+    sync or a busy spell used stays reserved by the process otherwise, so the
+    task manager keeps showing its peak. Cheap; safe to call any time. */
+void ReleaseFreeMemory();
+
 inline uint32_t ByteReverse(uint32_t value)
 {
     value = ((value & 0xFF00FF00) >> 8) | ((value & 0x00FF00FF) << 8);

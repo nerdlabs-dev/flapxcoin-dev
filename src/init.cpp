@@ -302,6 +302,7 @@ std::string HelpMessage()
         "  -gen=0                 " + _("Don't generate coins") + "\n" +
         "  -datadir=<dir>         " + _("Specify data directory") + "\n" +
         "  -dbcache=<n>           " + _("Set database cache size in megabytes (default: 100)") + "\n" +
+        "  -walletcache=<n>       " + _("Set the wallet database cache size in megabytes (default: 25)") + "\n" +
         "  -dblogsize=<n>         " + _("Set database disk log size in megabytes (default: 100)") + "\n" +
         "  -timeout=<n>           " + _("Specify connection timeout (in milliseconds)") + "\n" +
         "  -proxy=<ip:port>       " + _("Connect through socks proxy") + "\n" +
@@ -400,9 +401,19 @@ std::string HelpMessage()
 /** Initialize flapx.
  *  @pre Parameters should be parsed and config file should be read.
  */
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 bool AppInit2(boost::thread_group& threadGroup)
 {
     // ********************************************************* Step 1: setup
+#if defined(__GLIBC__)
+    // glibc gives each thread its own memory pool (up to 8 per CPU core) and
+    // rarely hands them back; with ~20 threads that can hold hundreds of MB.
+    // One shared pool, as Bitcoin Core does.
+    mallopt(M_ARENA_MAX, 1);
+#endif
 #ifdef _MSC_VER
     // Turn off microsoft heap dump noise
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);

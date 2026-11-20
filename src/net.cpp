@@ -1903,6 +1903,14 @@ void ThreadMessageHandler()
                 printf(fNow ? "Catching up: not handing out blocks until we're synced (us %d, peers %d)\n"
                             : "Caught up: handing out blocks again (us %d, peers %d)\n",
                        nBestHeight, nAgreed);
+            // Sync buffers, queued blocks and database write buffers are freed
+            // once caught up, but the process keeps the memory reserved unless
+            // it's handed back: do that when sync finishes, then every 30 minutes
+            static int64_t nLastRelease = 0;
+            if ((fCatchingUp && !fNow) || (!fNow && GetTime() - nLastRelease > 30 * 60)) {
+                ReleaseFreeMemory();
+                nLastRelease = GetTime();
+            }
             fCatchingUp = fNow;
         }
 

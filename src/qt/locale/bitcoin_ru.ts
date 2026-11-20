@@ -4680,6 +4680,11 @@ If the file does not exist, create it with owner-readable-only file permissions.
         <source>Insufficient funds</source>
         <translation>Недостаточно монет</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Размер кэша базы данных кошелька в мегабайтах (по умолчанию: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

@@ -4657,6 +4657,11 @@ Si le fichier n'existe pas, créez-le avec les droits de lecture seule accordés
         <source>Insufficient funds</source>
         <translation>Fonds insuffisants</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Taille du cache de la base de données du portefeuille en mégaoctets (par défaut : 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

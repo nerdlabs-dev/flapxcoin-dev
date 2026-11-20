@@ -1414,6 +1414,27 @@ void runCommand(std::string strCommand)
         printf("runCommand error: system(%s) returned %d\n", strCommand.c_str(), nErr);
 }
 
+#if defined(WIN32)
+#include <malloc.h>     // _heapmin
+#include <windows.h>    // HeapCompact
+#elif defined(__GLIBC__)
+#include <malloc.h>     // malloc_trim
+#elif defined(MAC_OSX)
+#include <malloc/malloc.h>
+#endif
+
+void ReleaseFreeMemory()
+{
+#if defined(WIN32)
+    _heapmin();                              // the C runtime's heap
+    HeapCompact(GetProcessHeap(), 0);        // and the process heap
+#elif defined(__GLIBC__)
+    malloc_trim(0);
+#elif defined(MAC_OSX)
+    malloc_zone_pressure_relief(NULL, 0);
+#endif
+}
+
 void RenameThread(const char* name)
 {
 #if defined(PR_SET_NAME)

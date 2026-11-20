@@ -4657,6 +4657,11 @@ Dosya mevcut değilse, sadece sahibi için okumayla sınırlı izin ile oluştur
         <source>Insufficient funds</source>
         <translation>Yetersiz bakiye</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Cüzdan veritabanı önbellek boyutu, megabayt (varsayılan: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

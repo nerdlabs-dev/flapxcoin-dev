@@ -4658,6 +4658,11 @@ Als het bestand niet bestaat, maak het dan aan, met een alleen-lezen permissie.<
         <source>Insufficient funds</source>
         <translation>Ontoereikend saldo</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Grootte van de cache van de portemonneedatabase in megabytes (standaard: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>

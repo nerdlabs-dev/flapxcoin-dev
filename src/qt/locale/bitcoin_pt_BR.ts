@@ -4656,6 +4656,11 @@ Se o arquivo não existir, crie um com permissão de leitura apenas pelo dono</t
         <source>Insufficient funds</source>
         <translation>Saldo insuficiente</translation>
     </message>
+    <message>
+        <location filename="../bitcoinstrings.cpp" line="0"/>
+        <source>Set the wallet database cache size in megabytes (default: 25)</source>
+        <translation>Tamanho do cache do banco de dados da carteira em megabytes (padrão: 25)</translation>
+    </message>
 </context>
 <context>
     <name>calcDialog</name>
